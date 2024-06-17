@@ -1,0 +1,133 @@
+#!/bin/bash
+# Setup script for Raspberry Pi 4 
+# Usage: sudo ./setup_pi4_wireless_analysis.sh
+
+# ASCII Art
+echo ''
+echo '  $$$$$$\  $$\   $$\ $$$$$$\ $$$$$$$\  $$\      $$\  $$$$$$\  $$$$$$$$\ $$$$$$$$\ '
+echo ' $$  __$$\ $$ |  $$ |\_$$  _|$$  __$$\ $$$\    $$$ |$$  __$$\ \__$$  __|$$  _____|'
+echo ' $$ /  \__|$$ |  $$ |  $$ |  $$ |  $$ |$$$$\  $$$$ |$$ /  $$ |   $$ |   $$ |      '
+echo ' \$$$$$$\  $$$$$$$$ |  $$ |  $$$$$$$  |$$\$$\$$ $$ |$$$$$$$$ |   $$ |   $$$$$\    '
+echo '  \____$$\ $$  __$$ |  $$ |  $$  ____/ $$ \$$$  $$ |$$  __$$ |   $$ |   $$  __|   '
+echo ' $$\   $$ |$$ |  $$ |  $$ |  $$ |      $$ |\$  /$$ |$$ |  $$ |   $$ |   $$ |      '
+echo ' \$$$$$$  |$$ |  $$ |$$$$$$\ $$ |      $$ | \_/ $$ |$$ |  $$ |   $$ |   $$$$$$$$\ '
+echo '  \______/ \__|  \__|\______|\__|      \__|     \__|\__|  \__|   \__|   \________|'
+echo ''
+
+# Exit if not run as root
+if [ "$(id -u)" != "0" ]; then
+    echo "ERROR: This script must be run as root."
+    exit 1
+fi
+
+# Configurable Variables
+REAL_USER=$(logname 2>/dev/null || echo $SUDO_USER)
+USER_PATH=$(pwd)
+REPO_SIXFAB="https://github.com/sixfab/Sixfab_PPP_Installer.git"
+REPO_HCXDUMPTOOL="https://github.com/ZerBea/hcxdumptool.git"
+REPO_BULLY="https://github.com/kimocoder/bully.git"
+
+# Function to install required packages
+install_packages() {
+    echo "Updating and installing packages..."
+    apt update && apt upgrade -y
+    apt-get install -yq git
+    apt-get install -yq jq wireguard scapy resolvconf libnl-genl-3-dev pip gcc net-tools hcxtools gpsd gpsd-clients rsync haveged hostapd util-linux procps iproute2 iw dnsmasq iptables aircrack-ng libcurl4-openssl-dev libssl-dev pkg-config build-essential libpcap-dev pixiewps traceroute nmap macchanger wifite
+     
+}
+
+# Function to set up file system
+setup_file_system() {
+    echo "Setting up file system..."
+    cd "$USER_PATH"
+    mkdir -p src collection upload
+    sudo chown -R $REAL_USER:$REAL_USER src/ collection/ upload/
+}
+
+# Function to clone repositories
+clone_repositories() {
+    echo "Cloning repositories..."
+    git clone "$REPO_SIXFAB" "$USER_PATH/src/Sixfab_PPP_Installer"
+    git clone "$REPO_HCXDUMPTOOL" "$USER_PATH/src/hcxdumptool"
+    git clone "$REPO_BULLY" "$USER_PATH/src/bully"
+    git clone "$REPO_MANA" "$USER_PATH/src/hostapd-mana"
+}
+
+# Function to set up Kismet
+setup_kismet() {
+    echo "Setting up Kismet..."
+    export DEBIAN_FRONTEND=noninteractive
+    echo "kismet kismet/install-setuid boolean false" | debconf-set-selections
+    wget -O - https://www.kismetwireless.net/repos/kismet-release.gpg.key --quiet | gpg --dearmor | sudo tee /usr/share/keyrings/kismet-archive-keyring.gpg >/dev/null
+    echo 'deb [signed-by=/usr/share/keyrings/kismet-archive-keyring.gpg] https://www.kismetwireless.net/repos/apt/release/bookworm bookworm main' | sudo tee /etc/apt/sources.list.d/kismet.list >/dev/null
+    apt update
+    apt-get install -yq kismet
+    unset DEBIAN_FRONTEND
+}
+
+# Function to install and set up hcxdumptool
+setup_hcxdumptool() {
+    echo "Setting up hcxdumptool..."
+    cd "$USER_PATH/src/hcxdumptool"
+    make
+    make install
+}
+
+# Function to install and set up Bully
+setup_bully() {
+    echo "Setting up bully..."
+    cd "$USER_PATH/src/bully/src"
+    make
+    make install
+}
+
+# Function to install and set up hostapd_mana
+setup_hostapd_mana() {
+    echo "Setting up hostapd-mana..."
+    cd "$USER_PATH/src/hostapd-mana"
+    make -C hostapd
+}
+
+# Function to set up aliases
+setup_aliases() {
+    echo "Setting up aliases..."
+    {
+        echo "alias gps1='sudo dmesg | grep ttyUSB'"
+        echo "alias gps2='sudo nano /etc/default/gpsd'"
+        echo "alias gps3='sudo systemctl restart gpsd'"
+        echo "alias site='sudo nano $KISMET_CONFIG'"
+    } >> $USER_PATH/.bashrc
+}
+
+# Function to disable onboard WiFi
+disable_onboard_wifi() {
+    echo "Disabling onboard WiFi..."
+    echo "dtoverlay=disable-wifi" >> /boot/firmware/config.txt
+}
+
+}
+
+# Function to configure Raspberry Pi settings
+configure_raspi() {
+    echo "Configuring Raspberry Pi settings..."
+    
+    # Set the environment variable for non-interactive mode
+    export RASPI_CONFIG_NONINT=1
+    
+    # Enable predictable network interface names
+    raspi-config nonint do_net_names 0
+}
+# Main script execution
+main() {
+    install_packages
+    setup_file_system
+    clone_repositories
+    setup_kismet
+    setup_hcxdumptool
+    setup_bully
+    setup_hostapd_mana
+    setup_aliases
+    disable_onboard_wifi
+    configure_raspi
+}
+main
